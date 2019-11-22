@@ -1,0 +1,120 @@
+---
+title: "Homework 6"
+author: "Yiyang LIU"
+date: "2019/11/20"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(broom)
+library(rvest)
+library(modelr)
+library(mgcv)
+knitr::opts_chunk$set(
+ echo = TRUE,
+ fig.width = 8, 
+ fig.height = 6,
+ fig.asp = 0.618,
+ out.width = "90%")
+theme_set(theme_bw() + 
+          theme(legend.position = "bottom",
+                legend.title = element_blank(),
+                plot.title = element_text(hjust = 0.5, size = 15),
+                plot.subtitle = element_text(hjust = 0.5, size = 12)))
+
+```
+
+# Problem 1
+
+### Load and clean the data for regression analysis
+```{r}
+bw = read_csv("./data/birthweight.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    babysex = factor(babysex, levels = c("1", "2")),
+    frace = factor(frace, levels = c("1", "2", "3", "4", "8", "9")),
+    malform = factor(malform, levels = c("0", "1")),
+    mrace = factor(mrace, levels = c("1", "2", "3", "4", "8"))
+  ) 
+
+sum(is.na(bw))
+```
+
+There is no NAs in the dataset.
+
+
+### Propose a regression model for birthweight. 
+
+```{r}
+fit = lm(bwt ~ ., data = bw) %>%
+  step(direction = "backward")
+summary(fit)
+```
+
+First I use "Stepwise Regression" to choose my model. According to the results above, I choose `bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken`.
+
+```{r}
+mymodel = lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken, data = bw)
+summary(fit)
+```
+
+The adjustted R-square of my model is 0.72 and the p-value of F test is significantly less than 0.05.
+
+### plot of model residuals against fitted values
+
+```{r}
+bw %>% 
+  add_predictions(fit) %>% 
+  add_residuals(fit) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(se = F, color = "red")+
+  labs(
+    titles = "Residuals VS fitted values",
+    x = "Fitted values",
+    y = "Residuals"
+  )
+```
+
+### Compare my model to two others
+
+* My model: `bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken`
+
+* Model 1: `bwt ~ blength + gaweeks`
+
+* Model 2: `bwt ~ babysex + blength + bhead + babysex * blength + babysex * bhead + blength * bhead + babysex * blength * bhead`
+
+```{r}
+set.seed(1)
+
+crossv_mc(bw, 100) %>% 
+    mutate(train = map(train, as_tibble),
+           test = map(test, as_tibble)) %>% 
+
+    mutate(mymodel = map(train, ~lm(bwt ~ babysex + bhead + blength + gaweeks + mheight + mrace + parity + ppwt + smoken, data = .x)),
+           model_1 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+           model_2 = map(train, ~lm(bwt ~ babysex + blength + bhead + babysex * blength + babysex * bhead + blength * bhead + babysex * blength * bhead, data = .x))) %>% 
+    mutate(rmse_mymodel = map2_dbl(mymodel, test, ~rmse(model = .x, data = .y)),
+           rmse_model_1 = map2_dbl(model_1, test, ~rmse(model = .x, data = .y)),
+           rmse_model_2 = map2_dbl(model_2, test, ~rmse(model = .x, data = .y))) %>% 
+  select(starts_with("rmse")) %>% 
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  
+  ggplot(aes(x = model, y = rmse, fill = model)) + 
+  geom_violin(alpha = .6, color = "blue") + 
+  labs(title = "Compare fitted model to two others",
+       x = "Modle",
+       y = "RMSE")
+```
+
+According to the plot, my model has the smallest overall RMSE among the 3 models so I can conclude that my model has more predictive accurary than the other two. Model 1 is the poorest when being used to  describing what factors can affect baby’s birthweight based on this dataset.
+
+# Problem 2
+
+```{r}
+
+```
+
