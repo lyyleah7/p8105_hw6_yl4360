@@ -49,7 +49,6 @@ There is no NAs in the dataset.
 ```{r}
 fit = lm(bwt ~ ., data = bw) %>%
   step(direction = "backward")
-summary(fit)
 ```
 
 First I use "Stepwise Regression" to choose my model. According to the results above, I choose `bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken`.
@@ -69,7 +68,7 @@ bw %>%
   add_residuals(fit) %>% 
   ggplot(aes(x = pred, y = resid)) +
   geom_point(alpha = 0.5) +
-  geom_smooth(se = F, color = "red")+
+  geom_smooth(method = lm, color = "red")+
   labs(
     titles = "Residuals VS fitted values",
     x = "Fitted values",
@@ -114,7 +113,98 @@ According to the plot, my model has the smallest overall RMSE among the 3 models
 
 # Problem 2
 
-```{r}
+### Load data
 
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+### A simple linear regression with `tmax` as the response and `tmin` as the predictor
+
+```{r}
+fit = lm(tmax ~ tmin, data = weather_df)
+summary(fit)
+```
+
+The fitted model is $\widehat Y =7.21 + 1.04\widehat X $ (Y=tmax, X=tmin)
+
+### Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of two qauntities
+
+* $\widehat {r}^2$
+
+* $\log (\widehat{\beta_o} \times \widehat{\beta_1})$
+
+```{r}
+bootstrap = function(x){
+  
+  model_1 =
+    x %>% 
+    broom::tidy()
+  model_2 =
+    x %>%
+    broom::glance()
+  
+  tibble(
+    r_squared = pull(model_2, adj.r.squared),
+    log_beta0_beta1 = log(pull(model_1, estimate)[1] * pull(model_1, estimate)[2]))
+  
+}
+
+estimates = 
+ weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~ lm(tmax ~ tmin, data = .x)),
+    results = map(models, bootstrap)) %>% 
+  unnest(results) %>%
+  select(-strap, -models) 
+
+estimates[1:6,] %>%
+  rename("Linear model" = `.id`) %>%
+  knitr::kable(align = 'c')
+```
+
+### The distribution of r_square
+
+```{r}
+estimates %>% 
+  ggplot(aes(x = r_squared)) +
+  geom_density(fill = "light pink", color = "light pink", alpha = .6, size = 1.3) +
+  labs( x = expression(""~hat(r)^2~""),
+       title = expression("Distribution of "~hat(r)^2~""),
+       y = "Density")
+```
+
+
+### The distribution of log(beta_0*beata_1)
+
+```{r}
+estimates %>% 
+  ggplot(aes(x = log_beta0_beta1)) +
+  geom_density(fill = "light blue", color = "light blue", alpha = .6, size = 1.3) +
+  labs(x = expression("log("~hat(beta)[0]~"*"~hat(beta)[1]~")"),
+       title = expression("Distribution of log("~hat(beta)[0]~"*"~hat(beta)[1]~")"),
+       y = "Density")
+```
+
+Both of the distribution of two estimates are a little left skewed, indicating that there might be some outliers in the dataset.
+
+### 95% confidence intervals
+
+```{r}
+r_square_interval = quantile(pull(estimates, r_squared), c(0.025,0.975))
+log_b0_b1_interval = quantile(pull(estimates, log_beta0_beta1), c(0.025,0.975))
+rbind(r_square_interval, log_b0_b1_interval) %>% 
+  knitr::kable(format = "html", align = 'c', caption = "95% confidence interval for estimates")
 ```
 
